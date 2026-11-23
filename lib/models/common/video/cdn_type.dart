@@ -4,6 +4,7 @@
 //https://github.com/yujincheng08/BiliRoaming/blob/master/app/src/main/res/values/arrays.xml
 
 enum CDNService {
+  auto('自动（播放时选择响应最快的官方地址）'),
   baseUrl('基础URL（不推荐）'),
   backupUrl('备用URL'),
   ali('ali（阿里云）', 'upos-sz-mirrorali.bilivideo.com'),
@@ -25,6 +26,13 @@ enum CDNService {
   cosov('cosov（腾讯云海外）', 'upos-sz-mirrorcosov.bilivideo.com'),
   hwov('hwov（华为云海外）', 'upos-sz-mirrorhwov.bilivideo.com'),
   hk_bcache('hk_bcache（Bilibili海外）', 'cn-hk-eq-bcache-01.bilivideo.com'),
+  // Verified 2026-11 from outside mainland China (HTTP 206 on video + audio).
+  // estg* resolve to origin cold-storage buckets, not CDN edges.
+  estgoss('estgoss（阿里云OSS源站）', 'upos-sz-estgoss.bilivideo.com'),
+  estgcos('estgcos（腾讯云COS源站）', 'upos-sz-estgcos.bilivideo.com'),
+  estghw('estghw（华为云源站）', 'upos-sz-estghw.bilivideo.com'),
+  bos('bos（百度云）', 'upos-sz-mirrorbos.bilivideo.com'),
+  bda2('bda2（百度云）', 'upos-sz-upcdnbda2.bilivideo.com'),
   ;
 
   final String desc;

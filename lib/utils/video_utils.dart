@@ -4,6 +4,7 @@ import 'package:PiliPlus/models/common/video/video_decode_type.dart';
 import 'package:PiliPlus/models/video/play/url.dart'
     show AudioItem, VideoItem, FormatItem;
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
+import 'package:PiliPlus/utils/cdn_probe.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
@@ -29,6 +30,11 @@ abstract final class VideoUtils {
     bool isAudio = false,
   }) {
     defaultCDNService ??= cdnService;
+
+    // Without a network check, auto keeps the API-provided mirror URL.
+    if (defaultCDNService == CDNService.auto) {
+      defaultCDNService = CDNService.backupUrl;
+    }
 
     if (defaultCDNService == CDNService.baseUrl) {
       return urls.first;
@@ -102,6 +108,35 @@ abstract final class VideoUtils {
         : Uri.parse(mcdnUpgcxcode)
               .replace(host: defaultCDNService.host ?? CDNService.ali.host)
               .toString();
+  }
+
+  static const _autoTimeout = Duration(seconds: 3);
+
+  /// Candidates for [CDNService.auto]: the API-provided mirror URLs, in API
+  /// order. PCDN (mcdn) URLs are left out: they can answer a probe and still
+  /// fail to play (#3432).
+  static List<String> autoCandidates(Iterable<String> urls) => [
+    for (final url in urls.toSet())
+      if (_mirrorRegex.hasMatch(url) &&
+          Uri.parse(url).queryParameters['os'] != 'mcdn')
+        url,
+  ];
+
+  /// Like [getCdnUrl], but with [CDNService.auto] it probes the candidates
+  /// concurrently and returns the first that responds. Falls back to
+  /// [getCdnUrl] when there is nothing to choose from or no candidate
+  /// responds within [_autoTimeout].
+  static Future<String> resolveCdnUrl(
+    Iterable<String> urls, {
+    bool isAudio = false,
+  }) async {
+    final fallback = getCdnUrl(urls, isAudio: isAudio);
+    if (cdnService != CDNService.auto || (isAudio && disableAudioCDN)) {
+      return fallback;
+    }
+    final candidates = autoCandidates(urls);
+    if (candidates.length < 2) return fallback;
+    return await CdnProbe.race(candidates, timeout: _autoTimeout) ?? fallback;
   }
 
   static String getLiveCdnUrl(CodecItem e, {int index = 0}) {

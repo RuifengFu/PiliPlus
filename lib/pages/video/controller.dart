@@ -716,10 +716,13 @@ class VideoDetailController extends GetxController
     return bestVideo ?? videoList.first;
   }
 
+  int _updatePlayerSeq = 0;
+
   /// 更新画质、音质
-  void updatePlayer() {
+  Future<void> updatePlayer() async {
     final currentVideoQa = this.currentVideoQa.value;
     if (currentVideoQa == null) return;
+    final seq = ++_updatePlayerSeq;
     _autoPlay.value = true;
     playedTime = plPlayerController.videoPlayerController?.state.position;
     plPlayerController
@@ -727,16 +730,29 @@ class VideoDetailController extends GetxController
       ..buffered.value = 0;
 
     firstVideo = findVideoByQa(currentVideoQa.code, setCodecs: true);
-    videoUrl = VideoUtils.getCdnUrl(firstVideo.playUrls);
+    final videoUrlFuture = VideoUtils.resolveCdnUrl(firstVideo.playUrls);
 
     /// 根据currentAudioQa 重新设置audioUrl
+    Future<String?> audioUrlFuture = Future.value(audioUrl);
     if (currentAudioQa != null) {
       final firstAudio = data.dash!.audio!.firstWhere(
         (i) => i.id == currentAudioQa!.code,
         orElse: () => data.dash!.audio!.first,
       );
-      audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
+      audioUrlFuture = VideoUtils.resolveCdnUrl(
+        firstAudio.playUrls,
+        isAudio: true,
+      );
     }
+
+    final (newVideoUrl, newAudioUrl) = await (
+      videoUrlFuture,
+      audioUrlFuture,
+    ).wait;
+    // a newer quality change has started, or the page is closed
+    if (isClosed || seq != _updatePlayerSeq) return;
+    videoUrl = newVideoUrl;
+    audioUrl = newAudioUrl;
 
     playerInit();
   }
@@ -998,20 +1014,29 @@ class VideoDetailController extends GetxController
       currentDecodeFormats = targetDecode;
       currentVideoQa.value = VideoQuality.fromCode(targetQuality);
       _setVideoHeight();
-      videoUrl = VideoUtils.getCdnUrl(firstVideo.playUrls);
+      final videoUrlFuture = VideoUtils.resolveCdnUrl(firstVideo.playUrls);
 
-      AudioItem? firstAudio;
+      Future<String> audioUrlFuture = Future.value('');
       final audioList = dash.audio;
       if (audioList != null && audioList.isNotEmpty) {
-        firstAudio = VideoUtils.findTargetAudio(
+        final firstAudio = VideoUtils.findTargetAudio(
           audioList,
           plPlayerController.cacheAudioQa,
         );
-        audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
+        audioUrlFuture = VideoUtils.resolveCdnUrl(
+          firstAudio.playUrls,
+          isAudio: true,
+        );
         currentAudioQa = AudioQuality.fromCode(firstAudio.id);
-      } else {
-        audioUrl = '';
       }
+
+      final (newVideoUrl, newAudioUrl) = await (
+        videoUrlFuture,
+        audioUrlFuture,
+      ).wait;
+      if (isClosed) return;
+      videoUrl = newVideoUrl;
+      audioUrl = newAudioUrl;
       await initPlayerIfNeeded(autoFullScreenFlag);
     } else {
       _autoPlay.value = false;
